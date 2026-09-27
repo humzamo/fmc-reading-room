@@ -90,11 +90,21 @@ func (f *globalFlags) newClient() (*fmcsite.Client, error) {
 func newSyncCmd(flags *globalFlags) *cobra.Command {
 	var limit int
 	var dryRun bool
+	var since string
 
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Download every document that isn't already saved",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var sinceDate time.Time
+			if since != "" {
+				parsed, err := time.Parse("2006-01-02", since)
+				if err != nil {
+					return fmt.Errorf("--since must be YYYY-MM-DD: %w", err)
+				}
+				sinceDate = parsed
+			}
+
 			client, err := flags.newClient()
 			if err != nil {
 				return err
@@ -107,6 +117,7 @@ func newSyncCmd(flags *globalFlags) *cobra.Command {
 
 			syncer := sync.New(client, st, sync.Options{
 				ProceedingsDir: flags.proceedingsDir,
+				Since:          sinceDate,
 				Limit:          limit,
 				DryRun:         dryRun,
 				Concurrency:    flags.concurrency,
@@ -126,8 +137,10 @@ func newSyncCmd(flags *globalFlags) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().IntVar(&limit, "limit", 0, "only fetch documents for the first N discovered proceedings (0 = no limit)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "only fetch documents for the first N discovered proceedings, or (with --since) the first N search results (0 = no limit)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "discover and diff normally, but don't write files or DB rows")
+	cmd.Flags().StringVar(&since, "since", "", "YYYY-MM-DD: only look for documents served on or after this date, via a single site-wide search "+
+		"instead of checking every proceeding individually. Safe regardless of proceeding age (see docs); much faster when only a small delta is expected.")
 	return cmd
 }
 

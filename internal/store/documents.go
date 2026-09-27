@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 )
@@ -46,6 +47,22 @@ func (s *Store) ExistingDocumentNumbers(proceedingNumber string) (map[int]bool, 
 		existing[n] = true
 	}
 	return existing, rows.Err()
+}
+
+// DocumentExists reports whether a document is already recorded, by its
+// unique key. Used by the --since path (internal/sync), which discovers
+// documents flatly across all proceedings via DocumentSearch rather than
+// grouped per-proceeding, so a per-proceeding existing-set doesn't apply.
+func (s *Store) DocumentExists(proceedingNumber string, documentNumber int) (bool, error) {
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM documents WHERE unique_key = ?`, UniqueKey(proceedingNumber, documentNumber)).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: checking document %s_%d: %w", proceedingNumber, documentNumber, err)
+	}
+	return true, nil
 }
 
 // InsertDocument records a newly downloaded document.

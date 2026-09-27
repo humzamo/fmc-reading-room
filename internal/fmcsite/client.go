@@ -38,6 +38,19 @@ type Client struct {
 	// MaxRetries is the number of extra attempts made after a failed
 	// request (network error or 5xx) before giving up.
 	MaxRetries int
+
+	// Progress, if set, receives human-readable progress messages during
+	// long paginated crawls (ProceedingSearch, DocumentSearch). Without
+	// this, nothing is logged until an entire multi-page search finishes,
+	// which can be several minutes for a wide date range and looks
+	// indistinguishable from a hang.
+	Progress func(format string, args ...any)
+}
+
+func (c *Client) progress(format string, args ...any) {
+	if c.Progress != nil {
+		c.Progress(format, args...)
+	}
 }
 
 // NewClient builds a Client with sensible defaults: a cookie jar (the site

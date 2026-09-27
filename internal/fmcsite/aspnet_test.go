@@ -3,9 +3,19 @@ package fmcsite
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
+
+func mustParseDate(t *testing.T, s string) time.Time {
+	t.Helper()
+	tm, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		t.Fatalf("parsing date %q: %v", s, err)
+	}
+	return tm
+}
 
 func loadFixture(t *testing.T, name string) *goquery.Document {
 	t.Helper()

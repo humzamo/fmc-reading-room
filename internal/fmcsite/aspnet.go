@@ -3,6 +3,7 @@ package fmcsite
 import (
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -68,6 +69,12 @@ const (
 	fieldIsClosedClientState       = "ctl00_MainContent_ddlClosed_ClientState"
 	fieldSearchButton              = "ctl00$MainContent$btnSearch"
 	fieldNextPageButtonTitle       = "Next Page"
+
+	// DocumentSearch's "Document Serve Date From" filter, a Telerik
+	// RadDatePicker. Its display text input and its ClientState hidden
+	// field (which is what the server actually parses) must both be set.
+	fieldServeDateFromDisplay     = "ctl00$MainContent$rdpDocumentServeFromDate$dateInput"
+	fieldServeDateFromClientState = "ctl00_MainContent_rdpDocumentServeFromDate_dateInput_ClientState"
 )
 
 // withProceedingType sets the ddlProceedingType filter to the given value by
@@ -85,6 +92,19 @@ func (f postbackForm) withProceedingType(t ProceedingType) postbackForm {
 func (f postbackForm) withIsClosedYes() postbackForm {
 	cs := `{"enabled":true,"logEntries":[],"selectedIndex":2,"selectedText":"Yes","selectedValue":"1"}`
 	return f.set(fieldIsClosedClientState, cs)
+}
+
+// withServeDateFrom sets DocumentSearch's "Document Serve Date From" filter.
+// Confirmed against the live site: setting these two fields and submitting
+// reproduces exactly what typing a date into the picker and clicking
+// Search does (verified by comparing the resulting item count).
+func (f postbackForm) withServeDateFrom(since time.Time) postbackForm {
+	display := since.Format("1/2/2006")
+	iso := since.Format("2006-01-02") + "-00-00-00"
+	clientState := fmt.Sprintf(
+		`{"enabled":true,"emptyMessage":"","validationText":%q,"valueAsString":%q,"minDateStr":"1970-01-01-00-00-00","maxDateStr":"2050-01-01-00-00-00","lastSetTextBoxValue":%q}`,
+		iso, iso, display)
+	return f.set(fieldServeDateFromDisplay, display).set(fieldServeDateFromClientState, clientState)
 }
 
 // clickSearch simulates pressing the Search button.

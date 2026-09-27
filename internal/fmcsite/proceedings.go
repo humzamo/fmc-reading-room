@@ -24,13 +24,32 @@ type DiscoveredProceeding struct {
 }
 
 // DiscoverProceedings finds every proceeding currently on the site, along
-// with its type and closed status. Those two fields aren't shown anywhere
-// except as search filter values, so they're derived by running one
-// paginated search per Proceeding Type (whose union is every proceeding)
-// plus one more paginated search for Is Closed = Yes, tagging matches.
+// with its type and closed status where known. Type/closed aren't shown
+// anywhere except as search filter values, so they're derived by running
+// one paginated search per Proceeding Type plus one for Is Closed = Yes,
+// tagging matches.
+//
+// The type searches alone are NOT a reliable way to enumerate every
+// proceeding, despite each one being a real filter over the full set:
+// confirmed live against the site, at least one proceeding ("23-10")
+// returns a row under the unfiltered "-- ALL --" view but "No records to
+// display" under every specific Proceeding Type filter — its type field is
+// evidently unset in the site's own data. An unfiltered search is run too,
+// purely to catch stragglers like this (their Type is left "" — unknown).
 func (c *Client) DiscoverProceedings(ctx context.Context) ([]DiscoveredProceeding, error) {
 	byNumber := make(map[string]*DiscoveredProceeding)
 	var order []string
+
+	addRow := func(row ProceedingSummary, t ProceedingType) {
+		if existing, ok := byNumber[row.Number]; ok {
+			if t != "" {
+				existing.Type = t
+			}
+			return
+		}
+		order = append(order, row.Number)
+		byNumber[row.Number] = &DiscoveredProceeding{ProceedingSummary: row, Type: t}
+	}
 
 	for _, t := range AllProceedingTypes {
 		rows, err := c.searchProceedings(ctx, func(f postbackForm) postbackForm {
@@ -40,11 +59,16 @@ func (c *Client) DiscoverProceedings(ctx context.Context) ([]DiscoveredProceedin
 			return nil, fmt.Errorf("fmcsite: discovering proceedings of type %q: %w", t, err)
 		}
 		for _, row := range rows {
-			if _, exists := byNumber[row.Number]; !exists {
-				order = append(order, row.Number)
-			}
-			byNumber[row.Number] = &DiscoveredProceeding{ProceedingSummary: row, Type: t}
+			addRow(row, t)
 		}
+	}
+
+	allRows, err := c.searchProceedings(ctx, func(f postbackForm) postbackForm { return f })
+	if err != nil {
+		return nil, fmt.Errorf("fmcsite: discovering proceedings (unfiltered catch-all): %w", err)
+	}
+	for _, row := range allRows {
+		addRow(row, "")
 	}
 
 	closedRows, err := c.searchProceedings(ctx, func(f postbackForm) postbackForm {
@@ -93,6 +117,9 @@ func (c *Client) searchProceedings(ctx context.Context, mutateForm func(postback
 		name, enabled := nextPageButtonName(doc)
 		if !enabled {
 			return results, nil
+		}
+		if page%10 == 0 {
+			c.progress("proceeding search: page %d done, %d rows so far", page, len(results))
 		}
 		form = parsePostbackForm(doc).clickNextPage(name)
 		doc, err = c.postForm(ctx, proceedingSearchPath, form)
