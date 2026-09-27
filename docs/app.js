@@ -1,5 +1,14 @@
 const PAGE_SIZE = 50;
 
+// Files live in the repo under proceedings/ and are served via GitHub's raw
+// content endpoint, since GitHub Pages' own published-site size cap (1GB) is
+// far below the size of the actual document corpus.
+const REPO_RAW_BASE = "https://raw.githubusercontent.com/humzamo/fmc-reading-room/main/proceedings/";
+
+function fileURL(filePath) {
+  return REPO_RAW_BASE + filePath.split("/").map(encodeURIComponent).join("/");
+}
+
 const state = {
   all: [],
   filtered: [],
@@ -127,15 +136,15 @@ function render() {
 }
 
 function rowHTML(d) {
-  const unavailable = d.unavailable
-    ? `<span class="unavailable-badge">file unavailable (dead link on source site)</span>`
-    : "";
+  const description = d.unavailable
+    ? `${escapeHTML(d.description)}<span class="unavailable-badge">file unavailable (dead link on source site)</span>`
+    : `<a href="${fileURL(d.file_path)}" target="_blank" rel="noopener">${escapeHTML(d.description)}</a>`;
   return `<tr>
     <td>${escapeHTML(d.served_date || "—")}</td>
     <td class="proceeding-number">${escapeHTML(d.proceeding_number)}</td>
     <td>${escapeHTML(d.proceeding_title)}</td>
     <td>${d.document_number}</td>
-    <td>${escapeHTML(d.description)}${unavailable}</td>
+    <td>${description}</td>
   </tr>`;
 }
 

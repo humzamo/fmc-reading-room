@@ -86,6 +86,7 @@ type ExportRow struct {
 	Description      string
 	ServedDate       time.Time
 	FileName         string
+	FilePath         string // relative to the proceedings/ folder; empty if Unavailable
 	Unavailable      bool
 }
 
@@ -94,7 +95,7 @@ type ExportRow struct {
 func (s *Store) ListDocumentsForExport() ([]ExportRow, error) {
 	rows, err := s.db.Query(`
 		SELECT d.proceeding_number, p.title, d.document_number, d.description,
-		       d.served_date, d.file_name, d.source_url
+		       d.served_date, d.file_name, d.file_path, d.source_url
 		FROM documents d
 		JOIN proceedings p ON p.proceeding_number = d.proceeding_number
 		ORDER BY d.served_date DESC, d.proceeding_number, d.document_number`)
@@ -109,7 +110,7 @@ func (s *Store) ListDocumentsForExport() ([]ExportRow, error) {
 		var servedDate sql.NullString
 		var sourceURL string
 		if err := rows.Scan(&r.ProceedingNumber, &r.ProceedingTitle, &r.DocumentNumber, &r.Description,
-			&servedDate, &r.FileName, &sourceURL); err != nil {
+			&servedDate, &r.FileName, &r.FilePath, &sourceURL); err != nil {
 			return nil, fmt.Errorf("store: scanning export row: %w", err)
 		}
 		r.ServedDate = parseNullableDate(servedDate)
@@ -117,6 +118,22 @@ func (s *Store) ListDocumentsForExport() ([]ExportRow, error) {
 		results = append(results, r)
 	}
 	return results, rows.Err()
+}
+
+// MarkDocumentUnavailable converts an already-recorded document into an
+// unavailable placeholder (see UnavailableSourceURL): used by `verify` when
+// a previously-downloaded file turns out to have been a fake-success error
+// page rather than a real document.
+func (s *Store) MarkDocumentUnavailable(uniqueKey string) error {
+	_, err := s.db.Exec(`
+		UPDATE documents
+		SET source_url = ?, file_name = '', file_path = '', content_type = NULL, file_size = NULL
+		WHERE unique_key = ?`,
+		UnavailableSourceURL, uniqueKey)
+	if err != nil {
+		return fmt.Errorf("store: marking document %s unavailable: %w", uniqueKey, err)
+	}
+	return nil
 }
 
 // CountDocuments returns the total number of stored documents.

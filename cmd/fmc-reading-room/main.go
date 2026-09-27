@@ -76,6 +76,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newSyncCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newExportCmd())
+	root.AddCommand(newVerifyCmd())
 	return root
 }
 
@@ -184,6 +185,7 @@ type exportDocument struct {
 	Description      string `json:"description"`
 	ServedDate       string `json:"served_date,omitempty"` // YYYY-MM-DD
 	FileName         string `json:"file_name,omitempty"`
+	FilePath         string `json:"file_path,omitempty"` // relative to proceedings/, for linking to the raw file in the repo
 	Unavailable      bool   `json:"unavailable,omitempty"`
 }
 
@@ -211,6 +213,7 @@ func newExportCmd() *cobra.Command {
 					DocumentNumber:   r.DocumentNumber,
 					Description:      r.Description,
 					FileName:         r.FileName,
+					FilePath:         r.FilePath,
 					Unavailable:      r.Unavailable,
 				}
 				if !r.ServedDate.IsZero() {
@@ -229,6 +232,57 @@ func newExportCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Wrote %d documents to %s\n", len(out), exportPath)
+			return nil
+		},
+	}
+}
+
+func newVerifyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "verify",
+		Short: "Check every downloaded file is a real PDF, fixing up any that aren't",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := store.Open(dbPath)
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+
+			rows, err := st.ListDocumentsForExport()
+			if err != nil {
+				return err
+			}
+
+			checked, fixed := 0, 0
+			for _, r := range rows {
+				if r.Unavailable || r.FilePath == "" {
+					continue
+				}
+				checked++
+				fullPath := filepath.Join(proceedingsDir, r.FilePath)
+				valid, err := sync.IsValidPDF(fullPath)
+				if err != nil {
+					fmt.Printf("could not check %s doc %d (%s): %v\n", r.ProceedingNumber, r.DocumentNumber, fullPath, err)
+					continue
+				}
+				if valid {
+					continue
+				}
+
+				uniqueKey := store.UniqueKey(r.ProceedingNumber, r.DocumentNumber)
+				if err := os.Remove(fullPath); err != nil {
+					fmt.Printf("failed to remove bad file for %s: %v\n", uniqueKey, err)
+					continue
+				}
+				if err := st.MarkDocumentUnavailable(uniqueKey); err != nil {
+					fmt.Printf("failed to mark %s unavailable: %v\n", uniqueKey, err)
+					continue
+				}
+				fixed++
+				fmt.Printf("fixed: %s was not a real PDF, marked unavailable\n", uniqueKey)
+			}
+
+			fmt.Printf("\nChecked %d files, fixed %d.\n", checked, fixed)
 			return nil
 		},
 	}

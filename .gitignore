@@ -1,4 +1,2 @@
 /bin/
 *.db
-/proceedings/*
-!/proceedings/.gitkeep

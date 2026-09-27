@@ -146,6 +146,15 @@ tbody tr:hover {
   background: #f0f4f8;
 }
 
+td a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+td a:hover {
+  text-decoration: underline;
+}
+
 .proceeding-number {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
