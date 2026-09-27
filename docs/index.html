@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FMC Reading Room Mirror</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>FMC Reading Room Mirror</h1>
+  <p class="subtitle">A local mirror of the Federal Maritime Commission's <a href="https://www2.fmc.gov/readingroom/" target="_blank" rel="noopener">public reading room</a>.</p>
+</header>
+
+<main>
+  <form id="filters" autocomplete="off">
+    <div class="field">
+      <label for="q">Title / description contains</label>
+      <input type="search" id="q" placeholder="e.g. complaint, settlement, extension of time">
+    </div>
+    <div class="field">
+      <label for="proceeding">Proceeding number</label>
+      <input type="text" id="proceeding" placeholder="e.g. 26-12">
+    </div>
+    <div class="field">
+      <label for="docNumber">Document number</label>
+      <input type="number" id="docNumber" min="0" placeholder="e.g. 5">
+    </div>
+    <div class="field">
+      <label for="from">Served from</label>
+      <input type="date" id="from">
+    </div>
+    <div class="field">
+      <label for="to">Served to</label>
+      <input type="date" id="to">
+    </div>
+    <div class="field checkbox-field">
+      <label><input type="checkbox" id="hideUnavailable" checked> Hide unavailable documents</label>
+    </div>
+    <button type="button" id="clear">Clear filters</button>
+  </form>
+
+  <p id="summary" aria-live="polite"></p>
+
+  <table id="results">
+    <thead>
+      <tr>
+        <th data-sort="served_date" class="sortable">Served</th>
+        <th data-sort="proceeding_number" class="sortable">Proceeding</th>
+        <th>Proceeding title</th>
+        <th data-sort="document_number" class="sortable">Doc #</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div id="pager">
+    <button type="button" id="prevPage">&laquo; Prev</button>
+    <span id="pageInfo"></span>
+    <button type="button" id="nextPage">Next &raquo;</button>
+  </div>
+</main>
+
+<footer>
+  <p><span id="totalCount"></span> documents indexed. Data regenerated on each sync run.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

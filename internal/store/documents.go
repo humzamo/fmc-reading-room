@@ -77,6 +77,48 @@ func (s *Store) InsertDocument(d Document) error {
 	return nil
 }
 
+// ExportRow is one document joined with its proceeding's title, for the
+// search UI's data export.
+type ExportRow struct {
+	ProceedingNumber string
+	ProceedingTitle  string
+	DocumentNumber   int
+	Description      string
+	ServedDate       time.Time
+	FileName         string
+	Unavailable      bool
+}
+
+// ListDocumentsForExport returns every document joined with its
+// proceeding's title, newest served date first.
+func (s *Store) ListDocumentsForExport() ([]ExportRow, error) {
+	rows, err := s.db.Query(`
+		SELECT d.proceeding_number, p.title, d.document_number, d.description,
+		       d.served_date, d.file_name, d.source_url
+		FROM documents d
+		JOIN proceedings p ON p.proceeding_number = d.proceeding_number
+		ORDER BY d.served_date DESC, d.proceeding_number, d.document_number`)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing documents for export: %w", err)
+	}
+	defer rows.Close()
+
+	var results []ExportRow
+	for rows.Next() {
+		var r ExportRow
+		var servedDate sql.NullString
+		var sourceURL string
+		if err := rows.Scan(&r.ProceedingNumber, &r.ProceedingTitle, &r.DocumentNumber, &r.Description,
+			&servedDate, &r.FileName, &sourceURL); err != nil {
+			return nil, fmt.Errorf("store: scanning export row: %w", err)
+		}
+		r.ServedDate = parseNullableDate(servedDate)
+		r.Unavailable = sourceURL == UnavailableSourceURL
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
 // CountDocuments returns the total number of stored documents.
 func (s *Store) CountDocuments() (int, error) {
 	var n int

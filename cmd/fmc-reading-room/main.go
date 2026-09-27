@@ -6,10 +6,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,6 +36,9 @@ const (
 	// limit caps proceedings/search-rows processed; for dev smoke-testing
 	// only. 0 = no limit.
 	limit = 0
+
+	// exportPath is where the search UI's data file is written.
+	exportPath = "docs/data/documents.json"
 )
 
 func main() {
@@ -70,6 +75,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.AddCommand(newSyncCmd())
 	root.AddCommand(newStatusCmd())
+	root.AddCommand(newExportCmd())
 	return root
 }
 
@@ -165,6 +171,64 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Total: %d proceedings, %d documents on disk.\n", proceedings, documents)
+			return nil
+		},
+	}
+}
+
+// exportDocument is the search UI's per-document JSON shape.
+type exportDocument struct {
+	ProceedingNumber string `json:"proceeding_number"`
+	ProceedingTitle  string `json:"proceeding_title"`
+	DocumentNumber   int    `json:"document_number"`
+	Description      string `json:"description"`
+	ServedDate       string `json:"served_date,omitempty"` // YYYY-MM-DD
+	FileName         string `json:"file_name,omitempty"`
+	Unavailable      bool   `json:"unavailable,omitempty"`
+}
+
+func newExportCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "export",
+		Short: "Write the search UI's data file (docs/data/documents.json)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := store.Open(dbPath)
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+
+			rows, err := st.ListDocumentsForExport()
+			if err != nil {
+				return err
+			}
+
+			out := make([]exportDocument, len(rows))
+			for i, r := range rows {
+				out[i] = exportDocument{
+					ProceedingNumber: r.ProceedingNumber,
+					ProceedingTitle:  r.ProceedingTitle,
+					DocumentNumber:   r.DocumentNumber,
+					Description:      r.Description,
+					FileName:         r.FileName,
+					Unavailable:      r.Unavailable,
+				}
+				if !r.ServedDate.IsZero() {
+					out[i].ServedDate = r.ServedDate.Format("2006-01-02")
+				}
+			}
+
+			if err := os.MkdirAll(filepath.Dir(exportPath), 0o755); err != nil {
+				return err
+			}
+			data, err := json.Marshal(out)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(exportPath, data, 0o644); err != nil {
+				return err
+			}
+			fmt.Printf("Wrote %d documents to %s\n", len(out), exportPath)
 			return nil
 		},
 	}
