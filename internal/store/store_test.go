@@ -82,6 +82,28 @@ func TestDocumentDiffByNumber(t *testing.T) {
 	}
 }
 
+func TestOpenTwiceDoesNotFailOnAlreadyAppliedMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+
+	s1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first Open: %v", err)
+	}
+	s1.Close()
+
+	// Reopening must not try to re-run the versioned ALTER TABLE migration
+	// (which would fail with "duplicate column name").
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("second Open: %v", err)
+	}
+	defer s2.Close()
+
+	if _, _, err := s2.LatestRun(); err != nil {
+		t.Fatalf("LatestRun after reopen: %v", err)
+	}
+}
+
 func TestSyncRunLifecycle(t *testing.T) {
 	s := openTestStore(t)
 
@@ -89,7 +111,7 @@ func TestSyncRunLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartRun: %v", err)
 	}
-	if err := s.FinishRun(id, time.Now(), RunStatusSuccess, 10, 1, 2, 2, 0, ""); err != nil {
+	if err := s.FinishRun(id, time.Now(), RunStatusSuccess, 10, 1, 2, 2, 0, 0, ""); err != nil {
 		t.Fatalf("FinishRun: %v", err)
 	}
 

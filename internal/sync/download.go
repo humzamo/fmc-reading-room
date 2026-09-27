@@ -58,3 +58,21 @@ func downloadDocument(ctx context.Context, client *fmcsite.Client, proceedingNum
 		DownloadedAt:     time.Now(),
 	}, nil
 }
+
+// unavailableDocument builds a placeholder row for a document whose file
+// 404s: every field the site's listing itself provided is kept, but there
+// is no file, so FileName/FilePath are left empty and SourceURL is replaced
+// with the store.UnavailableSourceURL sentinel. Recording this row (instead
+// of leaving the document missing) is what stops future syncs from
+// re-attempting the same dead link forever.
+func unavailableDocument(proceedingNumber string, doc fmcsite.DocumentRow) store.Document {
+	return store.Document{
+		UniqueKey:        store.UniqueKey(proceedingNumber, doc.Number),
+		ProceedingNumber: proceedingNumber,
+		DocumentNumber:   doc.Number,
+		ServedDate:       doc.ServedDate,
+		Description:      doc.Description,
+		SourceURL:        store.UnavailableSourceURL,
+		DownloadedAt:     time.Now(),
+	}
+}

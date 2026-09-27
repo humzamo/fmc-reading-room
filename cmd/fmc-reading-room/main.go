@@ -173,7 +173,8 @@ func printRun(run store.SyncRun) {
 		fmt.Printf("  finished: %s (took %s)\n", run.FinishedAt.Format(time.RFC1123), run.FinishedAt.Sub(run.StartedAt).Round(time.Second))
 	}
 	fmt.Printf("  proceedings scanned: %d (new: %d)\n", run.ProceedingsScanned, run.NewProceedings)
-	fmt.Printf("  documents: %d new, %d downloaded, %d failed\n", run.NewDocuments, run.DocumentsDownloaded, run.DocumentsFailed)
+	fmt.Printf("  documents: %d new, %d downloaded, %d unavailable (404, recorded), %d failed\n",
+		run.NewDocuments, run.DocumentsDownloaded, run.DocumentsUnavailable, run.DocumentsFailed)
 	if run.Error != "" {
 		fmt.Printf("  error: %s\n", run.Error)
 	}

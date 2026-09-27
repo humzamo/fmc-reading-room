@@ -16,6 +16,20 @@ import (
 //go:embed migrations/0001_init.sql
 var initSchema string
 
+//go:embed migrations/0002_add_documents_unavailable.sql
+var addDocumentsUnavailable string
+
+// UnavailableSourceURL marks a documents row as a placeholder for a
+// document the site's own listing links to but which 404s: every
+// resolvable field (proceeding number, document number, served date,
+// description) is still recorded, but there is no file, so file_name and
+// file_path are left empty. Recording the row (rather than leaving it
+// missing) is what stops future syncs from retrying the same dead link
+// forever; a person can find every such row with
+// `SELECT * FROM documents WHERE source_url = 'file_unavailable'` to
+// manually recheck later.
+const UnavailableSourceURL = "file_unavailable"
+
 // Store wraps the SQLite database. It's safe for concurrent use by multiple
 // goroutines (database/sql pools connections internally); SQLite itself
 // serializes writes.
@@ -39,7 +53,38 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("store: applying schema: %w", err)
 	}
+	if err := applyVersionedMigrations(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// schemaVersion is the number of versioned migrations below applied so far,
+// tracked via SQLite's built-in PRAGMA user_version. Unlike 0001_init.sql
+// (all CREATE TABLE/INDEX IF NOT EXISTS, safe to rerun unconditionally),
+// these are ALTER TABLE statements that error if rerun, so each one is
+// gated on the version it bumps to.
+func applyVersionedMigrations(db *sql.DB) error {
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return fmt.Errorf("store: reading schema version: %w", err)
+	}
+
+	migrations := []string{addDocumentsUnavailable}
+	for i, migration := range migrations {
+		targetVersion := i + 1
+		if version >= targetVersion {
+			continue
+		}
+		if _, err := db.Exec(migration); err != nil {
+			return fmt.Errorf("store: applying migration %d: %w", targetVersion, err)
+		}
+		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, targetVersion)); err != nil {
+			return fmt.Errorf("store: recording schema version %d: %w", targetVersion, err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error {

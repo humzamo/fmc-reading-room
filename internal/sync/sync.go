@@ -7,6 +7,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync/atomic"
@@ -85,7 +86,7 @@ func (s *Syncer) Run(ctx context.Context) (store.SyncRun, error) {
 		numbers = numbers[:s.Opts.Limit]
 	}
 
-	var scanned, newDocuments, downloaded, failed atomic.Int64
+	var scanned, newDocuments, downloaded, unavailable, failed atomic.Int64
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(s.Opts.Concurrency)
@@ -94,7 +95,7 @@ func (s *Syncer) Run(ctx context.Context) (store.SyncRun, error) {
 		folder := folderNames[number]
 		g.Go(func() error {
 			scanned.Add(1)
-			if err := s.syncProceeding(gctx, number, folder, &newDocuments, &downloaded, &failed); err != nil {
+			if err := s.syncProceeding(gctx, number, folder, &newDocuments, &downloaded, &unavailable, &failed); err != nil {
 				s.Opts.progress("proceeding %s: %v", number, err)
 			}
 			return nil // one proceeding's failure never aborts the whole run
@@ -104,18 +105,19 @@ func (s *Syncer) Run(ctx context.Context) (store.SyncRun, error) {
 
 	finishedAt := time.Now()
 	run := store.SyncRun{
-		ID:                  runID,
-		StartedAt:           startedAt,
-		FinishedAt:          finishedAt,
-		Status:              store.RunStatusSuccess,
-		ProceedingsScanned:  int(scanned.Load()),
-		NewProceedings:      newProceedings,
-		NewDocuments:        int(newDocuments.Load()),
-		DocumentsDownloaded: int(downloaded.Load()),
-		DocumentsFailed:     int(failed.Load()),
+		ID:                   runID,
+		StartedAt:            startedAt,
+		FinishedAt:           finishedAt,
+		Status:               store.RunStatusSuccess,
+		ProceedingsScanned:   int(scanned.Load()),
+		NewProceedings:       newProceedings,
+		NewDocuments:         int(newDocuments.Load()),
+		DocumentsDownloaded:  int(downloaded.Load()),
+		DocumentsUnavailable: int(unavailable.Load()),
+		DocumentsFailed:      int(failed.Load()),
 	}
 	if err := s.Store.FinishRun(runID, finishedAt, run.Status, run.ProceedingsScanned, run.NewProceedings,
-		run.NewDocuments, run.DocumentsDownloaded, run.DocumentsFailed, ""); err != nil {
+		run.NewDocuments, run.DocumentsDownloaded, run.DocumentsUnavailable, run.DocumentsFailed, ""); err != nil {
 		return store.SyncRun{}, err
 	}
 	return run, nil
@@ -125,7 +127,7 @@ func (s *Syncer) Run(ctx context.Context) (store.SyncRun, error) {
 // caller sees the same failure while the DB never keeps a run stuck as
 // "running" forever.
 func (s *Syncer) failRun(runID int64, startedAt time.Time, cause error) error {
-	if err := s.Store.FinishRun(runID, time.Now(), store.RunStatusFailed, 0, 0, 0, 0, 0, cause.Error()); err != nil {
+	if err := s.Store.FinishRun(runID, time.Now(), store.RunStatusFailed, 0, 0, 0, 0, 0, 0, cause.Error()); err != nil {
 		return fmt.Errorf("%w (also failed to record run failure: %v)", cause, err)
 	}
 	return cause
@@ -170,7 +172,7 @@ func (s *Syncer) upsertProceedings(discovered []fmcsite.DiscoveredProceeding) (m
 
 // syncProceeding fetches one proceeding's current document list and
 // downloads whatever isn't already recorded in the store.
-func (s *Syncer) syncProceeding(ctx context.Context, number, folderName string, newDocuments, downloaded, failed *atomic.Int64) error {
+func (s *Syncer) syncProceeding(ctx context.Context, number, folderName string, newDocuments, downloaded, unavailable, failed *atomic.Int64) error {
 	detail, err := s.Client.FetchProceedingDetail(ctx, number)
 	if err != nil {
 		failed.Add(1)
@@ -201,6 +203,16 @@ func (s *Syncer) syncProceeding(ctx context.Context, number, folderName string, 
 
 		record, err := downloadDocument(ctx, s.Client, number, folderPath, doc)
 		if err != nil {
+			if errors.Is(err, fmcsite.ErrNotFound) {
+				if err := s.Store.InsertDocument(unavailableDocument(number, doc)); err != nil {
+					failed.Add(1)
+					s.Opts.progress("failed to record %s doc %d as unavailable: %v", number, doc.Number, err)
+					continue
+				}
+				unavailable.Add(1)
+				s.Opts.progress("%s doc %d: 404, recorded as unavailable (won't retry automatically)", number, doc.Number)
+				continue
+			}
 			failed.Add(1)
 			s.Opts.progress("failed to download %s doc %d: %v", number, doc.Number, err)
 			continue

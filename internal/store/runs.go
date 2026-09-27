@@ -24,8 +24,13 @@ type SyncRun struct {
 	NewProceedings      int
 	NewDocuments        int
 	DocumentsDownloaded int
-	DocumentsFailed     int
-	Error               string
+	// DocumentsUnavailable counts documents the site's own listing links to
+	// that returned 404. These are recorded (see UnavailableSourceURL) so
+	// they're never retried automatically; DocumentsFailed below is for
+	// everything else (still worth retrying next run).
+	DocumentsUnavailable int
+	DocumentsFailed      int
+	Error                string
 }
 
 // StartRun records the beginning of a sync run and returns its ID.
@@ -39,13 +44,13 @@ func (s *Store) StartRun(startedAt time.Time) (int64, error) {
 }
 
 // FinishRun finalizes a run with its outcome and counters.
-func (s *Store) FinishRun(id int64, finishedAt time.Time, status string, scanned, newProceedings, newDocuments, downloaded, failed int, runErr string) error {
+func (s *Store) FinishRun(id int64, finishedAt time.Time, status string, scanned, newProceedings, newDocuments, downloaded, unavailable, failed int, runErr string) error {
 	_, err := s.db.Exec(`
 		UPDATE sync_runs
 		SET finished_at = ?, status = ?, proceedings_scanned = ?, new_proceedings = ?,
-		    new_documents = ?, documents_downloaded = ?, documents_failed = ?, error = ?
+		    new_documents = ?, documents_downloaded = ?, documents_unavailable = ?, documents_failed = ?, error = ?
 		WHERE id = ?`,
-		finishedAt.Format(time.RFC3339), status, scanned, newProceedings, newDocuments, downloaded, failed, nullString(runErr), id)
+		finishedAt.Format(time.RFC3339), status, scanned, newProceedings, newDocuments, downloaded, unavailable, failed, nullString(runErr), id)
 	if err != nil {
 		return fmt.Errorf("store: finishing run %d: %w", id, err)
 	}
@@ -57,14 +62,14 @@ func (s *Store) FinishRun(id int64, finishedAt time.Time, status string, scanned
 func (s *Store) LatestRun() (SyncRun, bool, error) {
 	row := s.db.QueryRow(`
 		SELECT id, started_at, finished_at, status, proceedings_scanned, new_proceedings,
-		       new_documents, documents_downloaded, documents_failed, error
+		       new_documents, documents_downloaded, documents_unavailable, documents_failed, error
 		FROM sync_runs ORDER BY id DESC LIMIT 1`)
 
 	var run SyncRun
 	var startedAt string
 	var finishedAt, runErr sql.NullString
 	err := row.Scan(&run.ID, &startedAt, &finishedAt, &run.Status, &run.ProceedingsScanned,
-		&run.NewProceedings, &run.NewDocuments, &run.DocumentsDownloaded, &run.DocumentsFailed, &runErr)
+		&run.NewProceedings, &run.NewDocuments, &run.DocumentsDownloaded, &run.DocumentsUnavailable, &run.DocumentsFailed, &runErr)
 	if err == sql.ErrNoRows {
 		return SyncRun{}, false, nil
 	}

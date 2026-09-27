@@ -2,6 +2,7 @@ package fmcsite
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,13 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 )
+
+// ErrNotFound indicates the server returned 404 for a document. This is
+// treated specially by the sync package: it means the reading room's own
+// listing links to a document that no longer resolves, which retrying
+// won't fix — the sync package records it as permanently unavailable
+// rather than trying it again on every future run.
+var ErrNotFound = errors.New("fmcsite: document not found (404)")
 
 const defaultUserAgent = "fmc-reading-room-sync/1.0 (+local research tool; low-volume, polite crawl)"
 
@@ -156,6 +164,9 @@ func (c *Client) Download(ctx context.Context, sourceURL string, w io.Writer) (D
 		return DownloadResult{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return DownloadResult{}, fmt.Errorf("fmcsite: download %s: %w", sourceURL, ErrNotFound)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return DownloadResult{}, fmt.Errorf("fmcsite: download %s: unexpected status %s", sourceURL, resp.Status)
 	}
