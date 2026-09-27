@@ -8,13 +8,30 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 
 DEFAULT_BATCH_SIZE = 100
 BRANCH = "main"
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 5
 
 
-def run(cmd):
-    subprocess.run(cmd, check=True)
+def run_with_retries(cmd, batch_num):
+    """Runs cmd, retrying a few times on failure — commit/push here have
+    both failed transiently on a flaky 1Password SSH-signing agent, not a
+    real problem with the commit content itself.
+    """
+    for attempt in range(1, MAX_RETRIES + 1):
+        result = subprocess.run(cmd)
+        if result.returncode == 0:
+            return
+        if attempt < MAX_RETRIES:
+            print(f"  {' '.join(cmd)} failed (attempt {attempt}/{MAX_RETRIES}), retrying in {RETRY_DELAY_SECONDS}s...", file=sys.stderr)
+            time.sleep(RETRY_DELAY_SECONDS)
+    print(f"\n{' '.join(cmd)} failed after {MAX_RETRIES} attempts on batch {batch_num}.", file=sys.stderr)
+    print("If this was a commit, nothing was added for this batch; if a push, the commit is saved locally.", file=sys.stderr)
+    print("Fix whatever's wrong (signing agent, network, auth) and re-run this script — it resumes automatically.", file=sys.stderr)
+    sys.exit(1)
 
 
 def untracked_proceedings_files():
@@ -66,14 +83,9 @@ def main():
                 print(f"  ... and {len(batch) - 3} more")
             continue
 
-        run(["git", "add", "--", *batch])
-        run(["git", "commit", "-q", "-m", f"Add proceedings documents (batch {batch_num}/{total_batches})"])
-
-        result = subprocess.run(["git", "push", "origin", BRANCH])
-        if result.returncode != 0:
-            print(f"\nPush failed on batch {batch_num}. The commit is saved locally.", file=sys.stderr)
-            print("Fix whatever's wrong (network, auth, etc.) and re-run this script — it resumes automatically.", file=sys.stderr)
-            sys.exit(1)
+        run_with_retries(["git", "add", "--", *batch], batch_num)
+        run_with_retries(["git", "commit", "-q", "-m", f"Add proceedings documents (batch {batch_num}/{total_batches})"], batch_num)
+        run_with_retries(["git", "push", "origin", BRANCH], batch_num)
 
     if not args.dry_run:
         print(f"\nDone: {total_batches} batches, {total_files} files committed and pushed.")
