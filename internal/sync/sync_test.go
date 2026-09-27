@@ -38,11 +38,10 @@ func newTestSyncer(t *testing.T) (*Syncer, *httptest.Server) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	client, err := fmcsite.NewClient(server.URL)
+	client, err := fmcsite.NewClient(server.URL, 0)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	client.RequestDelay = 0
 
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -148,11 +147,10 @@ func TestSyncSinceFindsNewDocumentOnOldProceeding(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	client, err := fmcsite.NewClient(server.URL)
+	client, err := fmcsite.NewClient(server.URL, 0)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	client.RequestDelay = 0
 
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

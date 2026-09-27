@@ -91,8 +91,7 @@ func TestOpenTwiceDoesNotFailOnAlreadyAppliedMigration(t *testing.T) {
 	}
 	s1.Close()
 
-	// Reopening must not try to re-run the versioned ALTER TABLE migration
-	// (which would fail with "duplicate column name").
+	// Must not re-run the ALTER TABLE migration (would error on rerun).
 	s2, err := Open(path)
 	if err != nil {
 		t.Fatalf("second Open: %v", err)

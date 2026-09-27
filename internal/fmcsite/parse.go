@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// parseSiteDate parses the MM/DD/YYYY format used throughout the reading
-// room's pages. Returns the zero time if s is empty or unparsable, since
-// some dates are legitimately blank (e.g. an unset "Last Updated").
+// parseSiteDate parses the site's MM/DD/YYYY dates, returning the zero
+// time for blank/unparsable input (some dates, e.g. "Last Updated", are
+// legitimately unset).
 func parseSiteDate(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {

@@ -28,9 +28,8 @@ func UniqueKey(proceedingNumber string, documentNumber int) string {
 	return fmt.Sprintf("%s_%d", proceedingNumber, documentNumber)
 }
 
-// ExistingDocumentNumbers returns the set of document numbers already
-// stored for a proceeding, used to diff against the site's current list and
-// find what's new.
+// ExistingDocumentNumbers returns the document numbers already stored for
+// a proceeding, to diff against the site's current list.
 func (s *Store) ExistingDocumentNumbers(proceedingNumber string) (map[int]bool, error) {
 	rows, err := s.db.Query(`SELECT document_number FROM documents WHERE proceeding_number = ?`, proceedingNumber)
 	if err != nil {
@@ -49,10 +48,8 @@ func (s *Store) ExistingDocumentNumbers(proceedingNumber string) (map[int]bool, 
 	return existing, rows.Err()
 }
 
-// DocumentExists reports whether a document is already recorded, by its
-// unique key. Used by the --since path (internal/sync), which discovers
-// documents flatly across all proceedings via DocumentSearch rather than
-// grouped per-proceeding, so a per-proceeding existing-set doesn't apply.
+// DocumentExists reports whether a document is already recorded. Used by
+// the --since path, which sees documents flatly rather than per-proceeding.
 func (s *Store) DocumentExists(proceedingNumber string, documentNumber int) (bool, error) {
 	var one int
 	err := s.db.QueryRow(`SELECT 1 FROM documents WHERE unique_key = ?`, UniqueKey(proceedingNumber, documentNumber)).Scan(&one)

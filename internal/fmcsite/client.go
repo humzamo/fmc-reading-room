@@ -14,36 +14,31 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-// ErrNotFound indicates the server returned 404 for a document. This is
-// treated specially by the sync package: it means the reading room's own
-// listing links to a document that no longer resolves, which retrying
-// won't fix — the sync package records it as permanently unavailable
-// rather than trying it again on every future run.
+// ErrNotFound indicates the server returned 404 for a document — the
+// reading room's own listing links to a file that no longer resolves.
+// The sync package records these as permanently unavailable instead of
+// retrying them.
 var ErrNotFound = errors.New("fmcsite: document not found (404)")
 
 const defaultUserAgent = "fmc-reading-room-sync/1.0 (+local research tool; low-volume, polite crawl)"
 
-// Client talks to the FMC reading room. It is not safe for concurrent use
-// across goroutines that share postback state (e.g. two concurrent grid
-// crawls), but concurrent plain GETs (detail pages, downloads) are fine.
+// Client talks to the FMC reading room. Not safe for concurrent use by
+// goroutines sharing postback state (e.g. two grid crawls); concurrent
+// plain GETs (detail pages, downloads) are fine.
 type Client struct {
 	BaseURL    string // e.g. https://www2.fmc.gov/readingroom
 	HTTPClient *http.Client
 	UserAgent  string
 
-	// RequestDelay is slept before every outgoing request, as a simple
-	// politeness rate limit.
+	// RequestDelay is slept before every outgoing request (politeness).
 	RequestDelay time.Duration
 
-	// MaxRetries is the number of extra attempts made after a failed
-	// request (network error or 5xx) before giving up.
+	// MaxRetries is the number of extra attempts after a failed request
+	// (network error or 5xx).
 	MaxRetries int
 
-	// Progress, if set, receives human-readable progress messages during
-	// long paginated crawls (ProceedingSearch, DocumentSearch). Without
-	// this, nothing is logged until an entire multi-page search finishes,
-	// which can be several minutes for a wide date range and looks
-	// indistinguishable from a hang.
+	// Progress, if set, receives progress messages during long paginated
+	// crawls — otherwise a multi-page search logs nothing until it's done.
 	Progress func(format string, args ...any)
 }
 
@@ -53,10 +48,8 @@ func (c *Client) progress(format string, args ...any) {
 	}
 }
 
-// NewClient builds a Client with sensible defaults: a cookie jar (the site
-// is a classic ASP.NET session app), a generic descriptive User-Agent, a
-// small delay between requests, and a few retries on transient failures.
-func NewClient(baseURL string) (*Client, error) {
+// NewClient builds a Client with sensible defaults.
+func NewClient(baseURL string, rateLimitMS int) (*Client, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("fmcsite: creating cookie jar: %w", err)
@@ -68,7 +61,7 @@ func NewClient(baseURL string) (*Client, error) {
 			Timeout: 60 * time.Second,
 		},
 		UserAgent:    defaultUserAgent,
-		RequestDelay: 250 * time.Millisecond,
+		RequestDelay: time.Duration(rateLimitMS) * time.Millisecond,
 		MaxRetries:   3,
 	}, nil
 }
@@ -80,10 +73,8 @@ func (c *Client) resolve(path string) string {
 	return c.BaseURL + "/" + strings.TrimPrefix(path, "/")
 }
 
-// doWithRetry performs req.build(), retrying transient failures with a
-// small linear backoff. build is called again on every attempt so callers
-// can hand in a fresh *http.Request each time (request bodies can't be
-// reused after being read).
+// doWithRetry retries transient failures with linear backoff. build is
+// called fresh on every attempt since a request body can't be reused.
 func (c *Client) doWithRetry(ctx context.Context, build func() (*http.Request, error)) (*http.Response, error) {
 	var lastErr error
 	for attempt := 0; attempt <= c.MaxRetries; attempt++ {

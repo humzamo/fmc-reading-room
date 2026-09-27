@@ -12,9 +12,7 @@ const (
 	RunStatusFailed  = "failed"
 )
 
-// SyncRun mirrors the sync_runs table: the app's run log. The latest row is
-// the "when did this last run, and what happened" status the user asked
-// for.
+// SyncRun mirrors the sync_runs table: the app's run log.
 type SyncRun struct {
 	ID                  int64
 	StartedAt           time.Time
@@ -24,10 +22,8 @@ type SyncRun struct {
 	NewProceedings      int
 	NewDocuments        int
 	DocumentsDownloaded int
-	// DocumentsUnavailable counts documents the site's own listing links to
-	// that returned 404. These are recorded (see UnavailableSourceURL) so
-	// they're never retried automatically; DocumentsFailed below is for
-	// everything else (still worth retrying next run).
+	// DocumentsUnavailable is 404s (see UnavailableSourceURL), never
+	// retried; DocumentsFailed is everything else, worth retrying.
 	DocumentsUnavailable int
 	DocumentsFailed      int
 	Error                string

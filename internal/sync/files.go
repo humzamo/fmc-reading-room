@@ -17,10 +17,7 @@ const maxNameLength = 150
 var illegalChars = regexp.MustCompile(`[/\\:*?"<>|]`)
 var whitespaceRun = regexp.MustCompile(`\s+`)
 
-// sanitizeName makes s safe to use as a single path component. It is used
-// for both proceeding folder names and document file names, both of which
-// are computed once and stored permanently — see store.Proceeding.FolderName
-// and store.Document.FileName for why they're never recomputed later.
+// sanitizeName makes s safe to use as a single path component.
 func sanitizeName(s string) string {
 	s = illegalChars.ReplaceAllString(s, "-")
 	s = whitespaceRun.ReplaceAllString(s, " ")

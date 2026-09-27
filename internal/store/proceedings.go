@@ -6,10 +6,8 @@ import (
 	"time"
 )
 
-// Proceeding mirrors the proceedings table. FolderName is set once, when a
-// proceeding is first inserted, and is never changed afterwards even if
-// Title later differs on the site — see the package doc and the project
-// plan for why (documents already on disk must never be silently moved).
+// Proceeding mirrors the proceedings table. FolderName is set once, on
+// first insert, and never changed even if Title later differs on the site.
 type Proceeding struct {
 	ProceedingNumber string
 	Title            string

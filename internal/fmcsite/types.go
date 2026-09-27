@@ -6,10 +6,8 @@ package fmcsite
 
 import "time"
 
-// ProceedingType is one of the enum values the ProceedingSearch page's
-// "Proceeding Type" filter accepts. The site doesn't expose this value
-// anywhere except as a search filter, so it's derived by tagging every
-// proceeding number returned by each type-filtered search.
+// ProceedingType is one of the ProceedingSearch page's "Proceeding Type"
+// filter values — not shown anywhere except as a search filter.
 type ProceedingType string
 
 const (
@@ -21,9 +19,8 @@ const (
 	ProceedingTypeSpecialInvestigation ProceedingType = "Special Investigation"
 )
 
-// AllProceedingTypes lists every filter value, in the order the site's
-// dropdown presents them (index matters for the RadDropDownList ClientState
-// payload built in aspnet.go).
+// AllProceedingTypes lists every filter value in the dropdown's order
+// (index matters for the ClientState payload built in aspnet.go).
 var AllProceedingTypes = []ProceedingType{
 	ProceedingTypeDockets,
 	ProceedingTypePetition,
@@ -33,9 +30,8 @@ var AllProceedingTypes = []ProceedingType{
 	ProceedingTypeSpecialInvestigation,
 }
 
-// ddlIndexValue returns the RadDropDownList item index and underlying value
-// the site's ddlProceedingType control uses for this type, as read from the
-// widget's client-side item data on the live search page.
+// ddlIndexValue returns ddlProceedingType's item index and value for this
+// type, read from the widget's client-side item data.
 func (t ProceedingType) ddlIndexValue() (index int, value string) {
 	switch t {
 	case ProceedingTypeDockets:

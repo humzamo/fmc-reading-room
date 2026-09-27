@@ -10,32 +10,25 @@ import (
 
 const proceedingSearchPath = "ProceedingSearch"
 
-// maxSearchPages guards against an infinite loop if the pager's "next page"
-// detection is ever wrong (e.g. a site markup change); 500 pages is far
-// beyond anything the ~700-item proceeding list should ever need.
+// maxSearchPages guards against an infinite loop if "next page" detection
+// is ever wrong; far beyond anything the ~700-item proceeding list needs.
 const maxSearchPages = 500
 
-// DiscoveredProceeding is a ProceedingSummary enriched with the type/closed
-// classification derived from filtered searches (see DiscoverProceedings).
+// DiscoveredProceeding is a ProceedingSummary enriched with type/closed
+// (see DiscoverProceedings).
 type DiscoveredProceeding struct {
 	ProceedingSummary
 	Type     ProceedingType
 	IsClosed bool
 }
 
-// DiscoverProceedings finds every proceeding currently on the site, along
-// with its type and closed status where known. Type/closed aren't shown
-// anywhere except as search filter values, so they're derived by running
-// one paginated search per Proceeding Type plus one for Is Closed = Yes,
-// tagging matches.
-//
-// The type searches alone are NOT a reliable way to enumerate every
-// proceeding, despite each one being a real filter over the full set:
-// confirmed live against the site, at least one proceeding ("23-10")
-// returns a row under the unfiltered "-- ALL --" view but "No records to
-// display" under every specific Proceeding Type filter — its type field is
-// evidently unset in the site's own data. An unfiltered search is run too,
-// purely to catch stragglers like this (their Type is left "" — unknown).
+// DiscoverProceedings finds every proceeding on the site, with its type and
+// closed status where known — neither is shown anywhere except as a search
+// filter, so they're derived by running one search per Proceeding Type plus
+// one for Is Closed = Yes, tagging matches. An unfiltered search also runs:
+// confirmed live, at least one proceeding ("23-10") has no type set and
+// returns "No records to display" under every specific type filter, so the
+// type searches alone would miss it.
 func (c *Client) DiscoverProceedings(ctx context.Context) ([]DiscoveredProceeding, error) {
 	byNumber := make(map[string]*DiscoveredProceeding)
 	var order []string
@@ -81,8 +74,7 @@ func (c *Client) DiscoverProceedings(ctx context.Context) ([]DiscoveredProceedin
 		if p, ok := byNumber[row.Number]; ok {
 			p.IsClosed = true
 		} else {
-			// Shouldn't happen (every proceeding should have a type), but
-			// don't silently drop it if the site's data is inconsistent.
+			// Shouldn't happen, but don't drop it if it does.
 			order = append(order, row.Number)
 			byNumber[row.Number] = &DiscoveredProceeding{ProceedingSummary: row, IsClosed: true}
 		}

@@ -20,9 +20,8 @@ func TestParseDocumentSearchRows(t *testing.T) {
 	if row.ServedDate.Format("01/02/2006") != "09/25/2026" {
 		t.Errorf("ServedDate = %v", row.ServedDate)
 	}
-	// Description must come from the hidden DocTitle column, not the
-	// visible Title column (which concatenates the proceeding's own title
-	// with this description and would otherwise need fragile splitting).
+	// Must come from the hidden DocTitle column, not the concatenated
+	// visible Title column.
 	if row.Description != "Served Notice of Commission Determination to Review" {
 		t.Errorf("Description = %q", row.Description)
 	}

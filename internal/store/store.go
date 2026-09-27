@@ -19,15 +19,10 @@ var initSchema string
 //go:embed migrations/0002_add_documents_unavailable.sql
 var addDocumentsUnavailable string
 
-// UnavailableSourceURL marks a documents row as a placeholder for a
-// document the site's own listing links to but which 404s: every
-// resolvable field (proceeding number, document number, served date,
-// description) is still recorded, but there is no file, so file_name and
-// file_path are left empty. Recording the row (rather than leaving it
-// missing) is what stops future syncs from retrying the same dead link
-// forever; a person can find every such row with
-// `SELECT * FROM documents WHERE source_url = 'file_unavailable'` to
-// manually recheck later.
+// UnavailableSourceURL marks a documents row whose file 404s: every
+// resolvable field is still recorded (with file_name/file_path left
+// empty), so future syncs stop retrying the dead link. Find these with
+// `SELECT * FROM documents WHERE source_url = 'file_unavailable'`.
 const UnavailableSourceURL = "file_unavailable"
 
 // Store wraps the SQLite database. It's safe for concurrent use by multiple
@@ -60,11 +55,9 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// schemaVersion is the number of versioned migrations below applied so far,
-// tracked via SQLite's built-in PRAGMA user_version. Unlike 0001_init.sql
-// (all CREATE TABLE/INDEX IF NOT EXISTS, safe to rerun unconditionally),
-// these are ALTER TABLE statements that error if rerun, so each one is
-// gated on the version it bumps to.
+// applyVersionedMigrations gates ALTER TABLE migrations (unlike
+// 0001_init.sql's CREATE TABLE IF NOT EXISTS, these error if rerun) behind
+// SQLite's PRAGMA user_version.
 func applyVersionedMigrations(db *sql.DB) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {

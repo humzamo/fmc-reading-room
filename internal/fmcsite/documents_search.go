@@ -11,9 +11,7 @@ import (
 
 const documentSearchPath = "DocumentSearch"
 
-// SiteDocument is one row from the site-wide DocumentSearch grid: unlike
-// FetchProceedingDetail (one proceeding's full document list),
-// SearchDocumentsSince spans every proceeding at once, filtered by date.
+// SiteDocument is one row from the site-wide DocumentSearch grid.
 type SiteDocument struct {
 	ProceedingNumber string
 	Number           int
@@ -23,12 +21,9 @@ type SiteDocument struct {
 }
 
 // SearchDocumentsSince returns every document served on or after since,
-// across all proceedings, using the site's own "Document Serve Date From"
-// filter. This is far cheaper than fetching every proceeding's detail page
-// when only a small delta is expected — and because it filters by the
-// document's own serve date rather than by which proceeding it belongs to,
-// it correctly finds a brand-new filing on an old, otherwise-dormant
-// proceeding just as reliably as one on a proceeding created yesterday.
+// across all proceedings, using the site's own date filter — filtered by
+// serve date, not by proceeding, so it finds new filings on old proceedings
+// too.
 func (c *Client) SearchDocumentsSince(ctx context.Context, since time.Time) ([]SiteDocument, error) {
 	doc, err := c.getHTML(ctx, documentSearchPath)
 	if err != nil {
@@ -59,13 +54,10 @@ func (c *Client) SearchDocumentsSince(ctx context.Context, since time.Time) ([]S
 	return nil, fmt.Errorf("fmcsite: exceeded %d pages without reaching the last page", maxSearchPages)
 }
 
-// parseDocumentSearchRows reads the grid's columns by position, matching
-// the header order confirmed on the live site: Proceeding Number, Document
-// Number, Document Serve Date, Title (a display-only concatenation of the
-// proceeding's title and the document's own description — not used here),
-// DocTitle (hidden; the document's clean description), FileType, FileName,
-// ProceedingNumber (hidden duplicate), Document link, Document button,
-// DocumentId (hidden), DocketId (hidden).
+// parseDocumentSearchRows reads columns by position: [0] Proceeding
+// Number, [1] Document Number, [2] Serve Date, [3] Title (display-only
+// concatenation, unused), [4] DocTitle (clean description), ... [10]
+// DocumentId.
 func parseDocumentSearchRows(doc *goquery.Document, baseURL string) []SiteDocument {
 	var rows []SiteDocument
 	doc.Find("table.rgMasterTable > tbody > tr").Each(func(_ int, row *goquery.Selection) {

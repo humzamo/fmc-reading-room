@@ -1,7 +1,7 @@
 // Command fmc-reading-room mirrors the FMC reading room
 // (https://www2.fmc.gov/readingroom/) to local disk + SQLite. Run `sync`
 // periodically (via cron/launchd, or by hand) to download whatever's new;
-// run `status` to see when it last ran and what happened.
+// run `status` to see when it last ran and what happened. See README.md.
 package main
 
 import (
@@ -20,15 +20,26 @@ import (
 	"github.com/humzamoazzam/fmc-reading-room/internal/sync"
 )
 
-const defaultBaseURL = "https://www2.fmc.gov/readingroom"
+// Only --dry-run and --since are worth changing at runtime; everything
+// else is fixed here — edit and rebuild for a different value.
+const (
+	baseURL        = "https://www2.fmc.gov/readingroom"
+	dbPath         = "fmc.db"
+	proceedingsDir = "proceedings"
+
+	// Tuned empirically against the live site (see README.md).
+	concurrency = 20
+	rateLimitMS = 75
+
+	// limit caps proceedings/search-rows processed; for dev smoke-testing
+	// only. 0 = no limit.
+	limit = 0
+)
 
 func main() {
-	// The reading room's server occasionally sends a stray byte on a
-	// keep-alive connection Go's transport already considers idle; this is
-	// harmless (every request still succeeds), but net/http logs it via
-	// the standard logger. Filter just that one diagnostic line rather
-	// than disabling keep-alives, which would meaningfully slow down a
-	// ~700-request discovery pass for no benefit.
+	// The server occasionally sends a stray byte on an idle keep-alive
+	// connection; harmless, but net/http logs it. Filter that one line
+	// rather than disabling keep-alives (which would slow discovery down).
 	log.SetOutput(dropLines(os.Stderr, "Unsolicited response received on idle HTTP channel"))
 
 	if err := newRootCmd().Execute(); err != nil {
@@ -52,43 +63,25 @@ func (w lineFilterWriter) Write(p []byte) (int, error) {
 	return w.dst.Write(p)
 }
 
-type globalFlags struct {
-	dbPath         string
-	proceedingsDir string
-	baseURL        string
-	concurrency    int
-	rateLimitMS    int
-}
-
 func newRootCmd() *cobra.Command {
-	flags := &globalFlags{}
-
 	root := &cobra.Command{
 		Use:   "fmc-reading-room",
 		Short: "Mirror the FMC reading room to local disk + SQLite",
 	}
-	root.PersistentFlags().StringVar(&flags.dbPath, "db", "fmc.db", "path to the SQLite database")
-	root.PersistentFlags().StringVar(&flags.proceedingsDir, "proceedings-dir", "proceedings", "path to the proceedings download folder")
-	root.PersistentFlags().StringVar(&flags.baseURL, "base-url", defaultBaseURL, "reading room base URL")
-	root.PersistentFlags().IntVar(&flags.concurrency, "concurrency", 5, "number of proceedings processed concurrently")
-	root.PersistentFlags().IntVar(&flags.rateLimitMS, "rate-limit-ms", 250, "delay before each outgoing request, in milliseconds")
-
-	root.AddCommand(newSyncCmd(flags))
-	root.AddCommand(newStatusCmd(flags))
+	root.AddCommand(newSyncCmd())
+	root.AddCommand(newStatusCmd())
 	return root
 }
 
-func (f *globalFlags) newClient() (*fmcsite.Client, error) {
-	client, err := fmcsite.NewClient(f.baseURL)
+func newClient() (*fmcsite.Client, error) {
+	client, err := fmcsite.NewClient(baseURL, rateLimitMS)
 	if err != nil {
 		return nil, err
 	}
-	client.RequestDelay = time.Duration(f.rateLimitMS) * time.Millisecond
 	return client, nil
 }
 
-func newSyncCmd(flags *globalFlags) *cobra.Command {
-	var limit int
+func newSyncCmd() *cobra.Command {
 	var dryRun bool
 	var since string
 
@@ -105,22 +98,22 @@ func newSyncCmd(flags *globalFlags) *cobra.Command {
 				sinceDate = parsed
 			}
 
-			client, err := flags.newClient()
+			client, err := newClient()
 			if err != nil {
 				return err
 			}
-			st, err := store.Open(flags.dbPath)
+			st, err := store.Open(dbPath)
 			if err != nil {
 				return err
 			}
 			defer st.Close()
 
 			syncer := sync.New(client, st, sync.Options{
-				ProceedingsDir: flags.proceedingsDir,
+				ProceedingsDir: proceedingsDir,
 				Since:          sinceDate,
 				Limit:          limit,
 				DryRun:         dryRun,
-				Concurrency:    flags.concurrency,
+				Concurrency:    concurrency,
 				Progress: func(format string, args ...any) {
 					log.Printf(format, args...)
 				},
@@ -137,19 +130,17 @@ func newSyncCmd(flags *globalFlags) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().IntVar(&limit, "limit", 0, "only fetch documents for the first N discovered proceedings, or (with --since) the first N search results (0 = no limit)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "discover and diff normally, but don't write files or DB rows")
-	cmd.Flags().StringVar(&since, "since", "", "YYYY-MM-DD: only look for documents served on or after this date, via a single site-wide search "+
-		"instead of checking every proceeding individually. Safe regardless of proceeding age (see docs); much faster when only a small delta is expected.")
+	cmd.Flags().StringVar(&since, "since", "", "YYYY-MM-DD: only fetch documents served on or after this date (see README.md)")
 	return cmd
 }
 
-func newStatusCmd(flags *globalFlags) *cobra.Command {
+func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show the last sync run and current totals",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := store.Open(flags.dbPath)
+			st, err := store.Open(dbPath)
 			if err != nil {
 				return err
 			}

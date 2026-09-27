@@ -1,9 +1,6 @@
 // Package sync orchestrates one full pass over the FMC reading room: it
 // discovers every proceeding, upserts its bookkeeping fields, then finds
-// and downloads whatever documents aren't already on disk. See the project
-// plan for why this is idempotent and diff-based rather than date-filtered
-// by default, and Options.Since below for the (safe) date-filtered fast
-// path.
+// and downloads whatever documents aren't already on disk.
 package sync
 
 import (
@@ -22,31 +19,23 @@ import (
 
 // Options configures a sync run.
 type Options struct {
-	// ProceedingsDir is where per-proceeding folders are created (the
-	// "proceedings" directory).
+	// ProceedingsDir is where per-proceeding folders are created.
 	ProceedingsDir string
-	// Since, if set, switches document discovery from fetching every
-	// proceeding's detail page to one site-wide DocumentSearch query
-	// filtered by "served on or after this date" — much cheaper when only
-	// a small delta is expected. This is safe regardless of proceeding
-	// age: the filter is on each document's own serve date, not on when
-	// its proceeding was created, so a brand-new filing on an old,
-	// otherwise-dormant proceeding is found just as reliably as one on a
-	// proceeding created yesterday. Proceeding discovery/metadata (title,
-	// type, closed) is unaffected — that pass always runs in full either
-	// way, since it's cheap on its own.
+	// Since, if set, finds documents via one DocumentSearch query filtered
+	// by serve date instead of fetching every proceeding's detail page —
+	// much cheaper for a small delta, and just as reliable for a new
+	// filing on an old proceeding since it filters by the document's own
+	// date, not the proceeding's. Discovery/metadata always runs in full
+	// regardless.
 	Since time.Time
-	// Limit caps how much work the document-fetching phase does — the
-	// number of proceedings checked (default mode) or the number of
-	// search result rows considered (Since mode) — for smoke-testing
-	// against the live site without doing a full crawl. Proceeding
-	// discovery/metadata is unaffected. 0 = no limit.
+	// Limit caps how many proceedings (or, with Since, search rows) are
+	// processed, for smoke-testing. 0 = no limit.
 	Limit int
 	// DryRun discovers and diffs normally but skips writing files and
-	// documents rows, only logging what would happen.
+	// documents rows.
 	DryRun bool
-	// Concurrency bounds how many proceedings, or in Since mode how many
-	// individual documents, are processed at once. Defaults to 5.
+	// Concurrency bounds how many proceedings (or, with Since, documents)
+	// are processed at once. Defaults to 5.
 	Concurrency int
 	// Progress, if set, receives human-readable progress messages.
 	Progress func(format string, args ...any)
@@ -142,10 +131,9 @@ func (s *Syncer) failRun(runID int64, startedAt time.Time, cause error) error {
 	return cause
 }
 
-// upsertProceedings inserts newly discovered proceedings (computing their
-// permanent folder name) and refreshes bookkeeping fields on existing ones.
-// It returns each proceeding's folder name (existing or newly created) for
-// use by the download phase.
+// upsertProceedings inserts new proceedings (computing their permanent
+// folder name) and refreshes bookkeeping on existing ones, returning each
+// proceeding's folder name.
 func (s *Syncer) upsertProceedings(discovered []fmcsite.DiscoveredProceeding) (map[string]string, int, error) {
 	folderNames := make(map[string]string, len(discovered))
 	newCount := 0
@@ -179,9 +167,8 @@ func (s *Syncer) upsertProceedings(discovered []fmcsite.DiscoveredProceeding) (m
 	return folderNames, newCount, nil
 }
 
-// syncAllProceedings is the default, full-fidelity document discovery
-// strategy: every discovered proceeding's detail page is fetched and
-// diffed. See syncSince for the --since alternative.
+// syncAllProceedings fetches and diffs every proceeding's detail page.
+// See syncSince for the --since alternative.
 func (s *Syncer) syncAllProceedings(ctx context.Context, discovered []fmcsite.DiscoveredProceeding, folderNames map[string]string, c *counters) error {
 	numbers := make([]string, 0, len(discovered))
 	for _, d := range discovered {
@@ -227,10 +214,8 @@ func (s *Syncer) syncProceeding(ctx context.Context, number, folderName string, 
 		if existing[doc.Number] {
 			continue
 		}
-		// The site's own document listing has occasionally repeated a
-		// document number within one proceeding; without this, the second
-		// occurrence would re-download and overwrite the first before
-		// failing to insert (unique_key already taken).
+		// The site occasionally repeats a document number within a
+		// proceeding; without this, the repeat would re-download.
 		existing[doc.Number] = true
 
 		s.downloadOne(ctx, number, folderPath, doc, c)
@@ -244,11 +229,9 @@ func (s *Syncer) syncProceeding(ctx context.Context, number, folderName string, 
 	return nil
 }
 
-// syncSince finds documents via a single site-wide DocumentSearch filtered
-// by serve date, rather than fetching every proceeding's detail page. Every
-// proceeding referenced by a result row is guaranteed to already be in
-// folderNames, because the discovery pass in Run always runs first and
-// covers every proceeding on the site, regardless of Since.
+// syncSince finds documents via one site-wide DocumentSearch filtered by
+// serve date. Every result row's proceeding is guaranteed to already be in
+// folderNames, since Run's discovery pass always runs first.
 func (s *Syncer) syncSince(ctx context.Context, since time.Time, folderNames map[string]string, c *counters) error {
 	rows, err := s.Client.SearchDocumentsSince(ctx, since)
 	if err != nil {
@@ -282,8 +265,7 @@ func (s *Syncer) syncSince(ctx context.Context, since time.Time, folderNames map
 
 			folder, ok := folderNames[row.ProceedingNumber]
 			if !ok {
-				// Shouldn't happen: Run's discovery pass covers every
-				// proceeding on the site before this ever runs.
+				// Shouldn't happen (see syncSince's doc comment).
 				c.failed.Add(1)
 				s.Opts.progress("skipping %s doc %d: proceeding wasn't in this run's discovery pass", row.ProceedingNumber, row.Number)
 				return nil
@@ -305,10 +287,8 @@ func (s *Syncer) syncSince(ctx context.Context, since time.Time, folderNames map
 	_ = g.Wait()
 	close(results)
 
-	// last_updated is normally the site's own "Last Updated" label (from a
-	// proceeding's detail page); in this mode we only have the documents we
-	// actually saw, so the latest served date among them is the closest
-	// available proxy.
+	// No "Last Updated" label available here (unlike syncProceeding), so
+	// the latest served date seen is the closest proxy.
 	maxServedByProceeding := make(map[string]time.Time)
 	for r := range results {
 		if cur, ok := maxServedByProceeding[r.proceedingNumber]; !ok || r.servedDate.After(cur) {
@@ -328,10 +308,9 @@ func (s *Syncer) syncSince(ctx context.Context, since time.Time, folderNames map
 	return nil
 }
 
-// downloadOne handles one not-yet-seen document: downloads it (or records
-// it as unavailable on a 404), updating c accordingly. It reports whether
-// the proceeding should be considered "touched" (downloaded or recorded as
-// unavailable) for last_updated bookkeeping purposes.
+// downloadOne downloads one not-yet-seen document, or records it as
+// unavailable on a 404, updating c accordingly. Reports whether the
+// proceeding should count as "touched" for last_updated bookkeeping.
 func (s *Syncer) downloadOne(ctx context.Context, proceedingNumber, folderPath string, doc fmcsite.DocumentRow, c *counters) (touched bool) {
 	c.newDocuments.Add(1)
 

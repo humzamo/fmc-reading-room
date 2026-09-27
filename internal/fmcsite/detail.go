@@ -8,11 +8,10 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-// FetchProceedingDetail fetches https://www2.fmc.gov/readingroom/proceeding/{number}/,
+// FetchProceedingDetail fetches https://www2.fmc.gov/readingroom/proceeding/{number}/:
 // a plain (non-postback) page listing the proceeding's title, last-updated
-// date, and every document filed under it. This grid never paginates
-// (confirmed via its client-side settings: AllowPaging is false), so a
-// single GET always returns the complete document list.
+// date, and every document filed under it. This grid never paginates, so a
+// single GET always returns the complete list.
 func (c *Client) FetchProceedingDetail(ctx context.Context, number string) (ProceedingDetail, error) {
 	path := fmt.Sprintf("proceeding/%s/", escapeProceedingNumber(number))
 	doc, err := c.getHTML(ctx, path)
@@ -52,12 +51,9 @@ func parseProceedingDetail(doc *goquery.Document, number, baseURL string) Procee
 	return detail
 }
 
-// escapeProceedingNumber makes a proceeding number safe to embed as a URL
-// path segment. Numbers like "2049(I)" or "SP-011981" contain characters
-// that are safe unescaped in practice on this site, but "/" (theoretically
-// possible in a title-like field) must never be allowed to reshape the
-// path, so this is a conservative allowlist rather than full URL-encoding
-// (which the site's own links don't do, and which 404s in testing).
+// escapeProceedingNumber only escapes "/", so a number can't reshape the
+// URL path. Full URL-encoding 404s on this site; other characters (e.g.
+// "2049(I)") are safe unescaped.
 func escapeProceedingNumber(number string) string {
 	return strings.ReplaceAll(number, "/", "%2F")
 }

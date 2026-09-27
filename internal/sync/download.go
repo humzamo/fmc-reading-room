@@ -11,11 +11,9 @@ import (
 	"github.com/humzamoazzam/fmc-reading-room/internal/store"
 )
 
-// downloadDocument fetches doc into folderPath, choosing its final file
-// name only after the response headers reveal a content type (so the
-// extension is right). It writes to a temp file first and renames into
-// place, so a crash or network failure never leaves a half-written file
-// under its real name.
+// downloadDocument fetches doc into folderPath, naming it only once the
+// response reveals a content type. Writes to a temp file and renames into
+// place, so a crash never leaves a half-written file under its real name.
 func downloadDocument(ctx context.Context, client *fmcsite.Client, proceedingNumber, folderPath string, doc fmcsite.DocumentRow) (store.Document, error) {
 	if err := ensureDir(folderPath); err != nil {
 		return store.Document{}, err
@@ -60,11 +58,8 @@ func downloadDocument(ctx context.Context, client *fmcsite.Client, proceedingNum
 }
 
 // unavailableDocument builds a placeholder row for a document whose file
-// 404s: every field the site's listing itself provided is kept, but there
-// is no file, so FileName/FilePath are left empty and SourceURL is replaced
-// with the store.UnavailableSourceURL sentinel. Recording this row (instead
-// of leaving the document missing) is what stops future syncs from
-// re-attempting the same dead link forever.
+// 404s: the site's own fields are kept, but FileName/FilePath are empty and
+// SourceURL is replaced with the store.UnavailableSourceURL sentinel.
 func unavailableDocument(proceedingNumber string, doc fmcsite.DocumentRow) store.Document {
 	return store.Document{
 		UniqueKey:        store.UniqueKey(proceedingNumber, doc.Number),
