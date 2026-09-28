@@ -52,10 +52,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # --sparse: proceedings/ is outside the sparse-checkout cone (we
-          # never check the existing 6GB out), so git otherwise refuses to
-          # stage the new files created there during this run.
-          git add --sparse proceedings fmc.db docs/data/documents.json
+          # proceedings/ only exists on disk at all if sync wrote new files
+          # there (it's outside the sparse-checkout cone otherwise), so guard
+          # against "pathspec did not match any files" on a no-new-docs run.
+          # --sparse: needed because that path is outside the checkout cone.
+          if [ -d proceedings ]; then
+            git add --sparse proceedings
+          fi
+          git add fmc.db docs/data/documents.json
           if git diff --cached --quiet; then
             echo "Nothing new."
           else
