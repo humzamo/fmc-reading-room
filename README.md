@@ -1,161 +1,166 @@
 # FMC Reading Room Sync
 
-A command-line tool that mirrors the Federal Maritime Commission's public
+A tool that mirrors the Federal Maritime Commission's public
 [reading room](https://www2.fmc.gov/readingroom/) — every proceeding and
-every document filed under it — to local disk and a SQLite database, and
-keeps that mirror up to date.
+every document filed under it (~19,000 documents across ~700 proceedings,
+and growing) — to local disk and a SQLite database, keeps that mirror up to
+date daily, and publishes it as a searchable website.
 
-## Why this exists
+The reading room has no public API; everything is only reachable by
+clicking through a legacy ASP.NET UI one proceeding at a time, with no way
+to bulk-download or know what's changed since you last looked. This tool
+builds a queryable copy instead: real files on disk, a SQLite database you
+can run SQL against, and a `sync` command that only fetches what's new.
 
-The reading room has no public API. Every document (orders, complaints,
-briefs, notices — ~19,000 of them across ~700 proceedings, and growing) is
-only reachable by clicking through a legacy ASP.NET web UI, one proceeding
-at a time. There's no way to search, script against, or bulk-download the
-underlying files, and no way to know what's changed since you last looked
-without re-checking everything by hand.
-
-This tool builds a queryable local copy: real files on disk you can
-`grep`/`open`, a SQLite database you can run SQL against, and a repeatable
-`sync` command that only fetches what's actually new.
+Live search UI: **https://humzamo.github.io/fmc-reading-room/**
 
 ## How it works
 
-### Discovery: finding every proceeding
+**Discovery.** The site's `ProceedingSearch` page is the only way to learn a
+proceeding's type or closed status — neither is shown anywhere else — so
+discovery runs one search per proceeding type, plus one for `Is Closed =
+Yes`, plus one unfiltered catch-all (at least one real proceeding has no
+type set and is invisible to every type filter). Every run does this full
+pass; it's cheap (well under a minute).
 
-The reading room exposes a `ProceedingSearch` page with filters for
-Proceeding Type (6 values: Dockets, Petition, Notice of Inquiry, Fact
-Finding, Special Permission, Special Investigation) and Is Closed. Neither
-field is displayed anywhere else on the site — not in search results, not
-on a proceeding's own page — so the only way to learn a proceeding's type
-or closed status is to run one search per type value plus one for
-`Is Closed = Yes`, and note which proceeding numbers come back from each.
+**Finding documents**, two strategies:
+- **Default** — fetch every proceeding's detail page
+  (`/readingroom/proceeding/{number}/`), which lists every document ever
+  filed under it, and download whatever isn't already recorded. Slower
+  (one request per proceeding) but always complete.
+- **`--since YYYY-MM-DD`** — query the site's `DocumentSearch` page directly
+  for documents served on/after that date. Much cheaper for a small daily
+  delta, and just as reliable at catching a new filing on an old, dormant
+  proceeding, since the filter is on the *document's* serve date, not the
+  *proceeding's* creation date.
 
-A plain, unfiltered search is *also* run, because at least one real
-proceeding on the site has no type value set at all and is invisible to
-every type-specific filter — it only shows up under "-- ALL --". Skipping
-this catch-all pass would silently and permanently miss any proceeding like
-it.
+A document's key is `{proceeding_number}_{document_number}` — permanent and
+never reused, which makes the whole thing idempotent: a document already in
+the database is never re-fetched, so re-running `sync` after any previous
+run (complete, partial, or interrupted) only does what's actually left.
 
-Every run does this full discovery pass and upserts the result: new
-proceedings get a row (and a permanent on-disk folder — see below);
-existing ones get their title/type/closed/created-date bookkeeping
-refreshed. This part is cheap (well under a minute) regardless of how the
-tool is invoked.
+**Downloads and naming.** Each proceeding gets a folder at
+`proceedings/{number}_{title}/`; each document is saved as
+`{doc_number}_{description}.{ext}` inside it. Both names are computed once,
+at first download, and never changed again, even if the site later edits
+its title/description text. A document whose link 404s (a handful of the
+site's own links are dead) is still recorded — with `source_url` set to the
+literal string `file_unavailable` — so future runs don't retry it forever.
 
-### Finding documents: two strategies
+**The database** (`fmc.db`, plain SQLite — open it directly with `sqlite3`
+or any client):
+- `proceedings` — number (PK), title, permanent folder name, dates, type,
+  closed status.
+- `documents` — unique key, proceeding/document number, served date,
+  description, source URL, permanent file name/path, content type, size.
+- `sync_runs` — the run log (start/finish time, status, counts). Latest row
+  = last run's outcome.
 
-**Default.** For every proceeding, fetch its detail page
-(`/readingroom/proceeding/{number}/`) — a plain, non-paginated page listing
-every document ever filed under it (number, serve date, description, a
-direct file link) — and download whatever document numbers aren't already
-recorded. This is a full, from-scratch-equivalent check: safe, always
-complete, but does one HTTP request per proceeding every time.
-
-**`--since YYYY-MM-DD`.** Instead of checking every proceeding, run one
-query against the site's `DocumentSearch` page filtered by
-"document serve date on or after this date" and download whatever comes
-back that isn't already recorded. This is much cheaper when only a small
-delta is expected, and — because the filter is on each *document's* own
-serve date, not on when its *proceeding* was created — it's just as
-reliable at finding a brand-new filing on a years-old, otherwise-dormant
-proceeding as one on a proceeding created yesterday. (Proceeding discovery,
-above, always runs in full either way; only the document-finding step
-changes.)
-
-Either way, a document is identified by `{proceeding_number}_{document_number}`.
-Document numbers are assigned once and never reused, so this pair is a
-stable, permanent key — which is what makes the whole thing idempotent: a
-document already in the database is never re-fetched, so re-running `sync`
-after a previous run (complete or partial/interrupted) only ever does the
-work that's actually left.
-
-### Downloading and naming
-
-Each proceeding gets a folder at `proceedings/{number}_{title}/`; each
-document is saved as `{doc_number}_{description}.{ext}` inside it. Both
-names are **computed once, at first-download time, and never changed
-again** — even if the site later edits a title or description — so nothing
-you've already downloaded ever gets silently renamed or moved out from
-under you. The extension is taken from the response's `Content-Type` (or
-its suggested filename), defaulting to `.pdf` since that's effectively
-every document on this site.
-
-A document whose link 404s (this happens — a handful of the site's own
-historical links are dead) is still recorded, with every field the site's
-own listing provided intact, but with `source_url` set to the literal
-string `file_unavailable` and no file. Recording it (rather than leaving it
-missing) is what stops future runs from retrying the same dead link
-forever; query for `source_url = 'file_unavailable'` to find every one and
-check it by hand.
-
-### The database
-
-Three tables in `fmc.db`:
-
-- **`proceedings`** — number (primary key), title, permanent folder name,
-  created date, last-updated date, type, closed status.
-- **`documents`** — unique key, proceeding number, document number, served
-  date, description, source URL, permanent file name/path, content type,
-  size, downloaded-at.
-- **`sync_runs`** — the run log: start/finish time, status, and counts
-  (proceedings scanned, new proceedings, new/downloaded/unavailable/failed
-  documents). `status` reads its latest row.
-
-It's a plain SQLite file — open it with the `sqlite3` CLI or any SQLite
-client and query it directly.
-
-## How to run it
+## Running it locally
 
 ```bash
 go build -o bin/fmc-reading-room ./cmd/fmc-reading-room
 ```
 
-Then, from the directory where you want `fmc.db` and `proceedings/` to
-live (this repo's root, normally):
+Then, from the directory where `fmc.db` and `proceedings/` should live
+(this repo's root, normally):
 
 ```bash
-./bin/fmc-reading-room sync              # download everything new
-./bin/fmc-reading-room sync --since 2026-09-01   # fast path: only check for documents served on/after this date
-./bin/fmc-reading-room sync --dry-run    # show what would happen without writing anything
-./bin/fmc-reading-room status            # show the last run's outcome and current totals
+./bin/fmc-reading-room sync                       # download everything new
+./bin/fmc-reading-room sync --since 2026-09-01    # fast path (see above)
+./bin/fmc-reading-room sync --dry-run             # show what would happen, write nothing
+./bin/fmc-reading-room status                     # last run's outcome + current totals
+./bin/fmc-reading-room export                     # regenerate docs/data/documents.json for the search UI
+./bin/fmc-reading-room verify                     # re-check every downloaded file is a real PDF, fix any that aren't
 ```
 
-Those two flags are the only ones exposed at runtime. Everything else
-(database path, download folder, base URL, concurrency, per-request delay,
-a proceeding-count limit used only for development smoke-testing) is a
-constant at the top of `cmd/fmc-reading-room/main.go` — edit and rebuild if
-you need a different value. The concurrency (20) and per-request delay
-(75ms) currently set were tuned empirically against the live site: they cut
-the initial ~19,000-document backfill from ~2h20m to a bit over an hour
-with no sign of the server straining.
+`--dry-run` and `--since` are the only flags exposed at runtime; everything
+else (DB path, download folder, concurrency, rate limit, base URL) is a
+constant at the top of `cmd/fmc-reading-room/main.go` — edit and rebuild for
+a different value. `verify` exists because the site occasionally returns
+HTTP 200 with a fake error page instead of a real 404; it re-checks every
+file's magic bytes and marks any fakes `file_unavailable`.
 
-There's no built-in scheduler — run `sync` by hand, or point cron/launchd
-at it (with its working directory set to this repo) for a recurring job.
+## The hosted pieces
+
+**Search UI** ([docs/](docs/), served by GitHub Pages): a static page that
+loads `docs/data/documents.json` and filters/sorts/paginates client-side —
+no backend. Each result links straight to the file via
+`raw.githubusercontent.com` (works because the repo is public).
+
+**Daily sync** ([.github/workflows/daily-sync.yml](.github/workflows/daily-sync.yml)):
+runs at 06:00 UTC (and on demand from the Actions tab), and:
+1. Checks out the repo *without* the ~6GB `proceedings/` folder — it uses a
+   partial clone (`filter: blob:none`) plus sparse-checkout limited to the
+   code, `docs/`, and root files like `fmc.db`, since `sync` only needs the
+   database to know what's already downloaded, never the existing files
+   themselves. This keeps every run's checkout small regardless of how big
+   the archive gets.
+2. Builds the CLI and runs `sync --since <3 days ago>` — the few days of
+   overlap cheaply cover a missed or failed run (`sync` is idempotent, so
+   overlap costs nothing but a few redundant existence checks).
+3. Runs `export` to refresh `docs/data/documents.json`.
+4. Commits and pushes anything new (new files, updated `fmc.db`, updated
+   JSON) — which also triggers a fresh Pages deploy automatically.
+
+## Keeping a local mirror in sync (Windows)
+
+If you want a full local copy of the files and database for further
+analysis — kept in sync automatically, without needing to run any commands
+yourself day to day — [scripts/windows/](scripts/windows/) has what you
+need. One-time setup:
+
+1. **Install [Git for Windows](https://git-scm.com/download/win)** (default
+   options are fine). This gives you a `git` command and "Git Bash", a
+   terminal you can paste commands into.
+2. **Clone the repo once.** Open Git Bash (Start menu → search "Git Bash"),
+   navigate to where you want the copy to live (e.g. `cd Documents`), and
+   run:
+   ```bash
+   git clone https://github.com/humzamo/fmc-reading-room.git
+   ```
+   This downloads everything — currently several GB, and it'll keep
+   growing — so give it a few minutes on a normal connection.
+3. **Double-click `scripts\windows\setup-daily-pull.bat`** inside the folder
+   you just cloned. This registers a Windows Scheduled Task that pulls the
+   latest changes automatically every day at 11:00 (your machine's local
+   time) — no admin rights needed.
+
+That's it — from then on, the folder updates itself daily. To check it's
+actually working: open `pull.log` in the repo folder (each run appends a
+timestamped line), or open the **Task Scheduler** app (Start menu → search
+"Task Scheduler") and look for "FMC Reading Room Daily Pull" in the
+library. Two things worth knowing: the pull only happens if the machine is
+on and you're logged in at 11:00, and it needs an internet connection at
+that moment.
 
 ## Assumptions and limitations
 
-- **Proceeding numbers and document numbers are permanent and never
-  reused.** This is the whole basis for the idempotent, diff-based design.
-- **Titles and descriptions may change on the site after the fact; this
-  tool doesn't track that.** The first-seen value is what gets used to
-  name the folder/file, and it's never revisited.
-- **Scraping a UI, not an API.** The site is a legacy ASP.NET WebForms app;
-  its search grids are paginated via full-page postbacks that this tool
-  reverse-engineered field-by-field (view state, event validation, the
-  Telerik widgets' client-state JSON). A significant markup or behavior
-  change on the site could break discovery or search without much warning
+- **Proceeding/document numbers are permanent and never reused** — the
+  basis for the idempotent, diff-based design.
+- **Titles and descriptions aren't re-checked after first download.** If
+  the site edits one later, the on-disk name doesn't follow.
+- **Scraping a UI, not an API.** The site's search grids are paginated via
+  full-page ASP.NET postbacks, reverse-engineered field-by-field. A
+  significant site change could break discovery without much warning
   beyond a parsing/HTTP error.
-- **`--since` trusts the site's own date filter and index.** If the site's
-  `DocumentSearch` index is ever behind reality for some document, this
-  tool would be too, until a full (no-`--since`) run catches it — the
-  default mode never trusts a date cutoff, by design, for exactly this
-  reason.
-- **Single local SQLite file, single writer.** Not designed for two `sync`
-  runs against the same database at once.
-- **A handful of documents genuinely 404 on the site itself** — pre-
-  existing dead links in the reading room's own records, not a bug here.
-  They're recorded as unavailable (see above) rather than retried forever.
-- **Politeness over raw speed.** Requests are rate-limited and use a
-  generic descriptive User-Agent; this is a low-volume personal research
-  tool, not built to maximize throughput against a public government
-  service.
+- **`--since` trusts the site's own date index.** If that index is ever
+  behind reality for some document, this tool would be too, until a full
+  run catches it — which is why the default (non-`--since`) mode never
+  trusts a date cutoff at all.
+- **Git is the file store and the database's source of truth.** Everything
+  — every PDF and `fmc.db` itself — lives in this git repo, kept in sync by
+  the daily GitHub Actions commit. That's a deliberate shortcut for a
+  zero-cost proof of concept, not something to keep doing in a real
+  deployment: git has no business being a multi-GB (and growing) document
+  store or a shared database. A production version of this would put the
+  files in cloud object storage (e.g. S3/R2) and treat the SQLite file as
+  disposable/rebuildable rather than as the durable copy.
+- **Single local SQLite file, single writer** — not designed for concurrent
+  `sync` runs against the same database.
+- **A handful of documents genuinely 404 on the site itself** (pre-existing
+  dead links, not a bug here) — recorded as unavailable rather than retried
+  forever.
+- **Politeness over raw speed.** Requests are rate-limited with a generic,
+  descriptive User-Agent — this is a low-volume research tool, not built to
+  maximize throughput against a public government service.
