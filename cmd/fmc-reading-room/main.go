@@ -224,7 +224,7 @@ func newExportCmd() *cobra.Command {
 			if err := os.MkdirAll(filepath.Dir(exportPath), 0o755); err != nil {
 				return err
 			}
-			data, err := json.Marshal(out)
+			data, err := json.MarshalIndent(out, "", "  ")
 			if err != nil {
 				return err
 			}
