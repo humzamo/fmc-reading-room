@@ -1,0 +1,61 @@
+name: Daily FMC sync
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC daily
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fmc-daily-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # proceedings/ is ~6GB and growing; none of that needs to be on disk for
+      # this job (sync diffs against fmc.db, not the filesystem), so skip it.
+      # filter: blob:none avoids even downloading those blobs, not just
+      # checking them out — new files under proceedings/ still add/commit/push
+      # fine since git only needs to reference unchanged blobs by hash.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            cmd
+            internal
+            docs
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -o bin/fmc-reading-room ./cmd/fmc-reading-room
+
+      - name: Sync new documents
+        run: |
+          # A few days of overlap covers a missed/failed run without meaningfully
+          # increasing work — sync is idempotent on (proceeding, document) key.
+          since=$(date -u -d '3 days ago' +%Y-%m-%d)
+          ./bin/fmc-reading-room sync --since "$since"
+
+      - name: Regenerate search UI data
+        run: ./bin/fmc-reading-room export
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add proceedings fmc.db docs/data/documents.json
+          if git diff --cached --quiet; then
+            echo "Nothing new."
+          else
+            git commit -m "Daily sync: $(date -u +%Y-%m-%d)"
+            git push
+          fi
