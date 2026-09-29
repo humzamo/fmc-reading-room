@@ -2,7 +2,7 @@ name: Daily FMC sync
 
 on:
   schedule:
-    - cron: '0 6 * * *' # 06:00 UTC daily
+    - cron: '12 6 * * *' # 06:12 UTC daily
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
 permissions:
