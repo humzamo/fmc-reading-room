@@ -1,0 +1,49 @@
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  # A plain `push` trigger alone wouldn't catch the daily sync job's commits:
+  # GitHub doesn't fire other workflows' `push` events for a push made with
+  # the default GITHUB_TOKEN (loop-prevention), which is how that job pushes.
+  workflow_run:
+    workflows: ['Daily FMC sync']
+    types: [completed]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Only docs/ is needed to publish the site — see daily-sync.yml for the
+      # same reasoning re: skipping the multi-GB proceedings/ folder.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            docs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - uses: actions/deploy-pages@v4
+        id: deployment
