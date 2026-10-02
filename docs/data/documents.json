@@ -1,5 +1,14 @@
 [
   {
+    "proceeding_number": "25-25",
+    "proceeding_title": "20230930-DK-Butterfly-1, Inc. v. CMA CGM S.A",
+    "document_number": 24,
+    "description": "Served Notice Not to Review",
+    "served_date": "2026-10-01",
+    "file_name": "24_Served Notice Not to Review.pdf",
+    "file_path": "25-25_20230930-DK-Butterfly-1, Inc. v. CMA CGM S.A/24_Served Notice Not to Review.pdf"
+  },
+  {
     "proceeding_number": "2059(I)",
     "proceeding_title": "Ilse Chaigneau v. Transparent International",
     "document_number": 2,
@@ -16,6 +25,24 @@
     "served_date": "2026-09-30",
     "file_name": "95_Served Initial Decision Granting Summary Decision.pdf",
     "file_path": "25-04_China United Lines, Ltd. v. Amazon.com Services LLC; Amazon Logistics Inc.; and Beijing Century Joyo Courier Service Co., Ltd./95_Served Initial Decision Granting Summary Decision.pdf"
+  },
+  {
+    "proceeding_number": "25-09",
+    "proceeding_title": "QVC, Inc. and Cornerstone Brands, Inc. v. Ocean Network Express Pte. Ltd.",
+    "document_number": 32,
+    "description": "Received Joint Status Report and Fifth Motion to Extend Deadlines",
+    "served_date": "2026-09-30",
+    "file_name": "32_Received Joint Status Report and Fifth Motion to Extend Deadlines.pdf",
+    "file_path": "25-09_QVC, Inc. and Cornerstone Brands, Inc. v. Ocean Network Express Pte. Ltd./32_Received Joint Status Report and Fifth Motion to Extend Deadlines.pdf"
+  },
+  {
+    "proceeding_number": "26-08",
+    "proceeding_title": "Ealytex Global Inc. v. COSCO Shipping Lines Co., Ltd.",
+    "document_number": 22,
+    "description": "Received Third Joint Status Report",
+    "served_date": "2026-09-30",
+    "file_name": "22_Received Third Joint Status Report.pdf",
+    "file_path": "26-08_Ealytex Global Inc. v. COSCO Shipping Lines Co., Ltd./22_Received Third Joint Status Report.pdf"
   },
   {
     "proceeding_number": "26-11",
