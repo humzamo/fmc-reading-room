@@ -20,7 +20,7 @@ import (
 // retrying them.
 var ErrNotFound = errors.New("fmcsite: document not found (404)")
 
-const defaultUserAgent = "fmc-reading-room-sync/1.0 (+local research tool; low-volume, polite crawl)"
+const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
 
 // Client talks to the FMC reading room. Not safe for concurrent use by
 // goroutines sharing postback state (e.g. two grid crawls); concurrent
