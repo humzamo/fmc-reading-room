@@ -15,7 +15,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
     steps:
       # proceedings/ is ~6GB and growing; none of that needs to be on disk for
       # this job (sync diffs against fmc.db, not the filesystem), so skip it.
